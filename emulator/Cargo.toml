@@ -1,0 +1,11 @@
+[package]
+name = "emulator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+framelink-rs = { path = "../framelink-rs" }
+heapless = { version = "0.8", default-features = false }
+
+[dev-dependencies]
+proptest = "1"

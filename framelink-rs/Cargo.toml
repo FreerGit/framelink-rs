@@ -1,0 +1,10 @@
+[package]
+name = "framelink-rs"
+version = "0.1.0"
+edition = "2021"
+description = "no_std UART framing library — COBS + CRC-16 + ACK/NAK retransmit"
+license = "MIT"
+repository = "https://github.com/freergit/framelink-rs"
+
+[dependencies]
+heapless = { version = "0.9.3", default-features = false }
