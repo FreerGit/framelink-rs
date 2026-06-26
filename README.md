@@ -1,6 +1,6 @@
 # Framelink-rs
 
-![CI](https://github.com/freergit/framelink-rs/actions/workflows/badge.svg)
+![CI](https://github.com/freergit/framelink-rs/actions/workflows/ci.yml/badge.svg)
 
 [no_std](https://docs.rust-embedded.org/book/intro/no-std.html) UART framing library for embedded Rust.
 
