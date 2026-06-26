@@ -7,31 +7,33 @@ pub struct Frame<const N: usize> {
 }
 
 impl<const N: usize> Frame<N> {
+    /// # Errors
+    /// Returns [`FrameError::PayloadTooLarge`] if `payload.len() > N`.
     pub fn new(payload: &[u8]) -> Result<Self, FrameError> {
-        match Vec::from_slice(payload) {
-            Ok(payload) => Ok(Frame { payload }),
-            Err(_) => Err(FrameError::BufferTooSmall),
-        }
+        Vec::from_slice(payload).map_or_else(
+            |_| Err(FrameError::PayloadTooLarge),
+            |payload| Ok(Self { payload }),
+        )
     }
 
+    /// # Errors
+    /// Returns [`FrameError::BufferTooSmall`] if the `out` buffer is too small
     pub fn encode(&self, out: &mut [u8]) -> Result<usize, FrameError> {
         let mut write_pos = 1;
         let mut header_pos = 0;
         let mut distance = 1;
 
         for &b in &self.payload {
-            match b {
-                0 => {
-                    // write distance into current overhead slot
-                    *out.get_mut(header_pos).ok_or(FrameError::BufferTooSmall)? = distance;
-                    header_pos = write_pos;
-                    distance = 1; // reset, counting the new overhead byte itself
-                }
-                _ => {
-                    *out.get_mut(write_pos).ok_or(FrameError::BufferTooSmall)? = b;
-                    distance += 1;
-                }
+            if b == 0 {
+                // write distance into current overhead slot
+                *out.get_mut(header_pos).ok_or(FrameError::BufferTooSmall)? = distance;
+                header_pos = write_pos;
+                distance = 1; // reset, counting the new overhead byte itself
+            } else {
+                *out.get_mut(write_pos).ok_or(FrameError::BufferTooSmall)? = b;
+                distance += 1;
             }
+
             write_pos += 1;
         }
 
@@ -44,7 +46,10 @@ impl<const N: usize> Frame<N> {
 
         Ok(write_pos)
     }
-
+    /// # Errors
+    ///
+    /// Will return `FrameError` if the `raw` buffer is inherently incorrect.
+    /// For example being much smaller than the inital payload
     pub fn decode(raw: &[u8]) -> Result<Self, FrameError> {
         let mut payload: heapless::Vec<u8, N> = heapless::Vec::new();
         let mut i = 0;
@@ -72,7 +77,7 @@ impl<const N: usize> Frame<N> {
 
         // todo: strip and verify CRC from end of payload
 
-        Ok(Frame { payload })
+        Ok(Self { payload })
     }
 }
 
