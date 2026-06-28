@@ -237,39 +237,39 @@ mod encode_decode_proptests {
     proptest! {
 
         #[test]
-        fn roundtrip_any_payload(payload in proptest::collection::vec(any::<u8>(), 0..64)) {
+        fn roundtrip_any_payload(payload in proptest::collection::vec(any::<u8>(), 0..253)) {
             let mut out = [0u8; 256];
-            let frame = Frame::<64>::new(&payload).unwrap();
+            let frame = Frame::<253>::new(&payload).unwrap();
             let n = frame.encode(&mut out).unwrap();
-            let decoded = Frame::<64>::decode(&out[..n]).unwrap();
+            let decoded = Frame::<253>::decode(&out[..n]).unwrap();
             prop_assert_eq!(decoded.payload.as_slice(), payload.as_slice());
         }
 
         #[test]
-        fn roundtrip_no_zeros_in_payload(payload in proptest::collection::vec(1u8..=255u8, 0..64)) {
+        fn roundtrip_no_zeros_in_payload(payload in proptest::collection::vec(1u8..=255u8, 0..253)) {
             let mut out = [0u8; 256];
-            let frame = Frame::<64>::new(&payload).unwrap();
+            let frame = Frame::<253>::new(&payload).unwrap();
             let n = frame.encode(&mut out).unwrap();
-            let decoded = Frame::<64>::decode(&out[..n]).unwrap();
+            let decoded = Frame::<253>::decode(&out[..n]).unwrap();
             prop_assert_eq!(decoded.payload.as_slice(), payload.as_slice());
         }
 
         #[test]
-        fn roundtrip_all_zeros(len in 0usize..64) {
+        fn roundtrip_all_zeros(len in 0usize..253) {
             let payload: std::vec::Vec<u8> = std::vec![0u8; len];
             let mut out = [0u8; 256];
-            let frame = Frame::<64>::new(&payload).unwrap();
+            let frame = Frame::<253>::new(&payload).unwrap();
             let n = frame.encode(&mut out).unwrap();
-            let decoded = Frame::<64>::decode(&out[..n]).unwrap();
+            let decoded = Frame::<253>::decode(&out[..n]).unwrap();
             prop_assert_eq!(decoded.payload.as_slice(), payload.as_slice());
         }
 
         #[test]
         fn encoded_output_never_contains_zero_before_terminator(
-            payload in proptest::collection::vec(any::<u8>(), 0..64)
+            payload in proptest::collection::vec(any::<u8>(), 0..253)
         ) {
             let mut out = [0u8; 256];
-            let frame = Frame::<64>::new(&payload).unwrap();
+            let frame = Frame::<253>::new(&payload).unwrap();
             let n = frame.encode(&mut out).unwrap();
             let encoded = &out[..n];
             // every byte except the last must be non-zero
@@ -279,28 +279,103 @@ mod encode_decode_proptests {
         }
 
         #[test]
-        fn encoded_length_is_bounded(payload in proptest::collection::vec(any::<u8>(), 0..64)) {
+        fn encoded_length_is_bounded(payload in proptest::collection::vec(any::<u8>(), 0..253)) {
             let mut out = [0u8; 256];
-            let frame = Frame::<64>::new(&payload).unwrap();
+            let frame = Frame::<253>::new(&payload).unwrap();
             let n = frame.encode(&mut out).unwrap();
             // max encoded length: payload + 2 CRC bytes + ceil(n/254) overhead + 1 terminator
             let max_len = payload.len() + 2 + 1 + 1;
             prop_assert!(n <= max_len, "encoded length {n} exceeded bound {max_len}");
         }
 
+        fn multiple_frames_roundtrip(
+            frames in proptest::collection::vec(
+                proptest::collection::vec(any::<u8>(), 0..32),
+                1..8
+            )
+        ) {
+            extern crate std;
+            let mut stream = [0u8; 1024]; // big enough for 8 frames of 32 bytes each
+            let mut stream_len = 0usize;
+
+            // encode all frames back to back into stream
+            for payload in &frames {
+                let frame = Frame::<32>::new(payload).unwrap();
+                let n = frame.encode(&mut stream[stream_len..]).unwrap();
+                stream_len += n;
+            }
+
+            // Scan for 0x00 terminators
+            let mut decoded_frames: std::vec::Vec<std::vec::Vec<u8>> = std::vec::Vec::new();
+            let mut pos = 0usize;
+
+            while pos < stream_len {
+                // find the next 0x00 terminator
+                let terminator = stream[pos..stream_len]
+                    .iter()
+                    .position(|&b| b == 0x00)
+                    .ok_or(()).unwrap();
+
+                let frame_end = pos + terminator + 1; // include the terminator
+                let decoded = Frame::<32>::decode(&stream[pos..frame_end]).unwrap();
+                decoded_frames.push(std::vec::Vec::from(decoded.payload.as_slice()));
+                pos = frame_end;
+            }
+
+            prop_assert_eq!(decoded_frames.len(), frames.len(),
+                "decoded {} frames, expected {}", decoded_frames.len(), frames.len());
+
+            for (i, (decoded, original)) in decoded_frames.iter().zip(frames.iter()).enumerate() {
+                prop_assert_eq!(decoded.as_slice(), original.as_slice(),
+                    "frame {} payload mismatch", i);
+            }
+        }
+
         #[test]
-        fn corrupted_byte_returns_crc_mismatch(payload in proptest::collection::vec(any::<u8>(), 0..64)) {
+        fn truncated_frame_always_errors(
+            payload in proptest::collection::vec(any::<u8>(), 1..32),
+            truncate_at in any::<usize>(),
+        ) {
+            let mut out = [0u8; 128];
+            let frame = Frame::<32>::new(&payload).unwrap();
+            let n = frame.encode(&mut out).unwrap();
+
+            // truncate somewhere before the end
+            let trunc = truncate_at % n; // never the full frame
+            let result = Frame::<32>::decode(&out[..trunc]);
+            prop_assert!(result.is_err());
+        }
+
+        #[test]
+        fn corrupted_byte_returns_crc_mismatch(payload in proptest::collection::vec(any::<u8>(), 0..253)) {
             let mut out = [0u8; 256];
-            let frame = Frame::<64>::new(&payload).unwrap();
+            let frame = Frame::<253>::new(&payload).unwrap();
             let n = frame.encode(&mut out).unwrap();
 
             // flip a bit in the middle of the frame (not the terminator)
             out[n / 2] ^= 0xFF;
 
             assert!(matches!(
-                Frame::<64>::decode(&out[..n]),
+                Frame::<253>::decode(&out[..n]),
                 Err(FrameError::CrcMismatch) | Err(FrameError::InvalidLength)
             ));
+        }
+
+        #[test]
+        fn single_bit_flip_always_detected(
+            payload in proptest::collection::vec(any::<u8>(), 1..32),
+            corrupt_pos in any::<usize>(),
+            corrupt_bit in 0u8..8,
+        ) {
+            let mut out = [0u8; 128];
+            let frame = Frame::<32>::new(&payload).unwrap();
+            let n = frame.encode(&mut out).unwrap();
+
+            let pos = corrupt_pos % (n - 1);
+            out[pos] ^= 1 << corrupt_bit;
+
+            let result = Frame::<32>::decode(&out[..n]);
+            prop_assert!(result.is_err());
         }
     }
 }
