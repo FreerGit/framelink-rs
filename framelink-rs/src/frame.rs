@@ -1,6 +1,13 @@
 use heapless::Vec;
 
-use crate::error::FrameError;
+#[derive(Debug)]
+pub enum FrameError {
+    CobsDecodeError,
+    CrcMismatch,
+    BufferTooSmall,
+    PayloadTooLarge,
+    InvalidLength,
+}
 
 pub struct Frame<const N: usize> {
     payload: heapless::Vec<u8, N>,
@@ -40,6 +47,10 @@ impl<const N: usize> Frame<N> {
             |_| Err(FrameError::PayloadTooLarge),
             |payload| Ok(Self { payload }),
         )
+    }
+
+    pub fn payload(&self) -> Vec<u8, N> {
+        return self.payload.clone();
     }
 
     /// # Errors

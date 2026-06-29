@@ -3,7 +3,7 @@ use core::option::Option::{self, None, Some};
 use core::result::Result;
 use core::result::Result::Ok;
 
-use framelink_rs::transport::Transport;
+use framelink_rs::transport::{Transport, TransportError};
 use heapless::spsc::{Consumer, Producer, Queue};
 
 #[derive(Default)]
@@ -37,12 +37,6 @@ pub struct UartSide<'a> {
     corrupt_at: Option<usize>,
 }
 
-#[derive(Debug)]
-pub enum TransportError {
-    FailedRead,
-    FailedWrite,
-}
-
 impl UartSide<'_> {
     pub fn corrupt_byte_at(&mut self, offset: usize) {
         self.corrupt_at = Some(offset);
@@ -50,9 +44,7 @@ impl UartSide<'_> {
 }
 
 impl Transport for UartSide<'_> {
-    type Error = TransportError;
-
-    fn write_bytes(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+    fn write_bytes(&mut self, data: &[u8]) -> Result<(), TransportError> {
         for (i, &b) in data.iter().enumerate() {
             let byte = match self.corrupt_at {
                 Some(pos) if pos == i => {
@@ -68,11 +60,11 @@ impl Transport for UartSide<'_> {
         Ok(())
     }
 
-    fn read_byte(&mut self) -> Result<u8, Self::Error> {
+    fn read_byte(&mut self) -> Result<u8, TransportError> {
         self.rx.dequeue().ok_or(TransportError::FailedRead)
     }
 
-    fn flush(&mut self) -> Result<(), Self::Error> {
+    fn flush(&mut self) -> Result<(), TransportError> {
         Ok(())
     }
 }
